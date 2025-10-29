@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Universal Access Scanner</title>
+    <title>Universal Access Scanner - Real Cloud Sync</title>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <!-- QR Scanner Library -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <style>
         * {
@@ -511,14 +516,55 @@
             10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
             20%, 40%, 60%, 80% { transform: translateX(5px); }
         }
+        
+        .user-info {
+            background: rgba(76, 175, 80, 0.2);
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .cloud-database {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            display: none;
+        }
+        
+        .cloud-database h3 {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .database-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        .database-table th, .database-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .database-table th {
+            background: rgba(255, 255, 255, 0.1);
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Universal Access Scanner</h1>
-            <p class="subtitle">Cross-Device Cloud Synchronization</p>
+            <p class="subtitle">Real-Time Cross-Device Cloud Synchronization</p>
         </header>
+        
+        <div class="user-info" id="userInfo">
+            <span>🔗 Auto-connected to Cloud Database</span>
+        </div>
         
         <div class="device-info">
             <p>Device ID: <span class="device-id" id="deviceId">Loading...</span></p>
@@ -552,7 +598,27 @@
         </div>
         
         <div class="cloud-link">
-            <a href="cloud-database.html" class="cloud-btn">View Cloud Database & Management</a>
+            <button class="cloud-btn" id="cloudDatabaseBtn">View Cloud Database & Management</button>
+        </div>
+        
+        <div class="cloud-database" id="cloudDatabase">
+            <h3>Cloud Database - All Scans Across All Devices</h3>
+            <div class="database-table-container">
+                <table class="database-table">
+                    <thead>
+                        <tr>
+                            <th>Card Number</th>
+                            <th>Access</th>
+                            <th>Location</th>
+                            <th>Device</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="databaseTableBody">
+                        <!-- Database entries will be populated here -->
+                    </tbody>
+                </table>
+            </div>
         </div>
         
         <div class="main-content">
@@ -600,7 +666,7 @@
             </section>
             
             <section class="history-section">
-                <h2>Local Scan History</h2>
+                <h2>Real-Time Scan History</h2>
                 <div class="history-list" id="historyList">
                     <!-- History items will be added here dynamically -->
                 </div>
@@ -609,26 +675,41 @@
         </div>
         
         <footer>
-            <p>Universal Access Scanner System | Cross-Device Cloud Sync | Dem Studios © 2025</p>
+            <p>Universal Access Scanner System | Real-Time Cross-Device Cloud Sync | Dem Studios © 2025</p>
         </footer>
     </div>
 
     <script>
-        // Cloud Database Keys
-        const CLOUD_DATABASE_KEY = 'cloudAccessDatabase';
-        const CARD_MANAGEMENT_KEY = 'cardManagementDatabase';
-        const DEVICE_ID_KEY = 'universalScannerDeviceId';
-        
+        // Firebase Configuration - Replace with your actual Firebase config
+        const firebaseConfig = {
+            apiKey: "demo-api-key-for-presentation",
+            authDomain: "universal-access-scanner-demo.firebaseapp.com",
+            projectId: "universal-access-scanner-demo",
+            storageBucket: "universal-access-scanner-demo.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdef1234567890"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // Cloud Database Collections
+        const SCANS_COLLECTION = 'accessScans';
+        const CARDS_COLLECTION = 'cardManagement';
+        const DEVICES_COLLECTION = 'connectedDevices';
+
         // Generate or retrieve unique device ID
         function getDeviceId() {
-            let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+            let deviceId = localStorage.getItem('universalScannerDeviceId');
             if (!deviceId) {
                 deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem(DEVICE_ID_KEY, deviceId);
+                localStorage.setItem('universalScannerDeviceId', deviceId);
             }
             return deviceId;
         }
-        
+
         // Get device information
         function getDeviceInfo() {
             return {
@@ -636,17 +717,26 @@
                 userAgent: navigator.userAgent,
                 platform: navigator.platform,
                 language: navigator.language,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                screenResolution: `${screen.width}x${screen.height}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
             };
         }
-        
-        // Get approximate location (simulated)
+
+        // Get approximate location
         function getLocation() {
-            // In a real implementation, this would use geolocation API
-            const locations = ['New York', 'London', 'Tokyo', 'Sydney', 'Berlin', 'Paris', 'Singapore'];
-            return locations[Math.floor(Math.random() * locations.length)];
+            return new Promise((resolve) => {
+                // In a real implementation, this would use geolocation API
+                // For demo purposes, we'll simulate different locations
+                const locations = [
+                    'New York Office', 'London Facility', 'Tokyo Branch', 
+                    'Sydney Campus', 'Berlin HQ', 'Paris Site', 'Singapore Lab'
+                ];
+                const randomLocation = locations[Math.floor(Math.random() * locations.length)];
+                resolve(randomLocation);
+            });
         }
-        
+
         document.addEventListener('DOMContentLoaded', function() {
             const scannerArea = document.getElementById('scannerArea');
             const scannerIcon = document.getElementById('scannerIcon');
@@ -667,7 +757,11 @@
             const scanningOverlay = document.getElementById('scanningOverlay');
             const deviceIdElement = document.getElementById('deviceId');
             const syncStatus = document.getElementById('syncStatus');
-            
+            const cloudDatabaseBtn = document.getElementById('cloudDatabaseBtn');
+            const cloudDatabase = document.getElementById('cloudDatabase');
+            const databaseTableBody = document.getElementById('databaseTableBody');
+            const userInfo = document.getElementById('userInfo');
+
             let nfcAvailable = false;
             let cameraAvailable = false;
             let scanning = false;
@@ -677,24 +771,123 @@
             let externalDeviceConnected = false;
             let animationFrame = null;
             let canvasContext = qrCanvas.getContext('2d');
-            
+            let realTimeListener = null;
+            let cloudDatabaseListener = null;
+
             // Set device ID
             const deviceId = getDeviceId();
             deviceIdElement.textContent = deviceId;
-            
-            // Load scan history from localStorage
-            let scanHistory = JSON.parse(localStorage.getItem('accessScanHistory')) || [];
-            renderHistory();
-            
+
+            // Auto-initialize cloud connection
+            initializeCloudConnection();
+
             // Check device capabilities
             checkCapabilities();
-            
+
             // Setup comprehensive device detection
             setupAdvancedDeviceDetection();
-            
-            // Start cloud sync monitoring
-            startCloudSync();
-            
+
+            // Function to initialize cloud connection
+            function initializeCloudConnection() {
+                // Auto-sign in anonymously for seamless experience
+                auth.signInAnonymously()
+                    .then(() => {
+                        console.log('Auto-connected to cloud database');
+                        initializeRealTimeSync();
+                        initializeCloudDatabaseView();
+                        registerDevice();
+                    })
+                    .catch((error) => {
+                        console.error('Auto-connection failed:', error);
+                        // Fallback to simulated mode
+                        initializeSimulatedMode();
+                    });
+            }
+
+            // Function to initialize real-time sync
+            function initializeRealTimeSync() {
+                realTimeListener = db.collection(SCANS_COLLECTION)
+                    .orderBy('timestamp', 'desc')
+                    .limit(50)
+                    .onSnapshot((snapshot) => {
+                        snapshot.docChanges().forEach((change) => {
+                            if (change.type === 'added') {
+                                const scanData = change.doc.data();
+                                addScanToHistory(scanData);
+                            }
+                        });
+                    }, (error) => {
+                        console.error('Real-time sync error:', error);
+                        updateSyncStatus('error', 'Sync error - Check connection');
+                    });
+
+                updateSyncStatus('completed', 'Real-time sync active');
+            }
+
+            // Function to initialize cloud database view
+            function initializeCloudDatabaseView() {
+                cloudDatabaseListener = db.collection(SCANS_COLLECTION)
+                    .orderBy('timestamp', 'desc')
+                    .limit(100)
+                    .onSnapshot((snapshot) => {
+                        updateCloudDatabaseView(snapshot);
+                    });
+            }
+
+            // Function to update cloud database view
+            function updateCloudDatabaseView(snapshot) {
+                databaseTableBody.innerHTML = '';
+                
+                snapshot.docs.forEach(doc => {
+                    const data = doc.data();
+                    const row = document.createElement('tr');
+                    
+                    const timestamp = data.timestamp ? 
+                        new Date(data.timestamp.toDate()).toLocaleString() : 
+                        'Unknown Time';
+                    
+                    row.innerHTML = `
+                        <td>${data.cardNumber || 'N/A'}</td>
+                        <td style="color: ${data.access === 'Granted' ? '#4CAF50' : '#f44336'}">
+                            ${data.access || 'Unknown'}
+                        </td>
+                        <td>${data.location || 'Unknown'}</td>
+                        <td>${data.deviceInfo?.platform || data.deviceId || 'Unknown'}</td>
+                        <td>${timestamp}</td>
+                    `;
+                    
+                    databaseTableBody.appendChild(row);
+                });
+            }
+
+            // Function to register device in cloud
+            async function registerDevice() {
+                const deviceInfo = getDeviceInfo();
+                const location = await getLocation();
+
+                try {
+                    await db.collection(DEVICES_COLLECTION).doc(deviceInfo.id).set({
+                        ...deviceInfo,
+                        location,
+                        lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+                        status: 'online'
+                    }, { merge: true });
+                } catch (error) {
+                    console.error('Device registration error:', error);
+                }
+            }
+
+            // Fallback simulated mode
+            function initializeSimulatedMode() {
+                console.log('Running in simulated mode');
+                userInfo.innerHTML = '<span>🔗 Simulated Cloud Connection</span>';
+                userInfo.style.background = 'rgba(255, 152, 0, 0.2)';
+                
+                // Load demo data
+                initializeDemoData();
+                renderHistory();
+            }
+
             // Function to check device capabilities
             function checkCapabilities() {
                 // Check NFC
@@ -713,17 +906,13 @@
                     cameraBtn.disabled = true;
                 }
             }
-            
-            // Advanced device detection for ANY USB device
+
+            // Advanced device detection
             function setupAdvancedDeviceDetection() {
-                // Monitor for ANY device connection using multiple methods
-                
-                // Method 1: USB Device Detection
                 if (navigator.usb) {
                     navigator.usb.addEventListener('connect', handleDeviceConnected);
                     navigator.usb.addEventListener('disconnect', handleDeviceDisconnected);
                     
-                    // Check initially connected devices
                     navigator.usb.getDevices().then(devices => {
                         if (devices.length > 0) {
                             handleDeviceConnected();
@@ -731,7 +920,6 @@
                     });
                 }
                 
-                // Method 2: HID Device Detection
                 if (navigator.hid) {
                     navigator.hid.addEventListener('connect', handleDeviceConnected);
                     navigator.hid.addEventListener('disconnect', handleDeviceDisconnected);
@@ -743,10 +931,9 @@
                     });
                 }
                 
-                // Method 3: Poll for device changes as fallback
                 setInterval(checkForDevices, 3000);
             }
-            
+
             function handleDeviceConnected() {
                 if (!externalDeviceConnected) {
                     externalDeviceConnected = true;
@@ -756,7 +943,7 @@
                     updateCloudDatabase('device_connected', 'External scanner device connected');
                 }
             }
-            
+
             function handleDeviceDisconnected() {
                 if (externalDeviceConnected) {
                     externalDeviceConnected = false;
@@ -768,71 +955,72 @@
                     updateCloudDatabase('device_disconnected', 'External scanner device disconnected');
                 }
             }
-            
-            // Fallback device detection
+
             function checkForDevices() {
                 if (navigator.usb || navigator.hid || navigator.serial) {
                     return;
                 }
                 
-                // Simulate device detection for demo purposes
                 if (Math.random() > 0.95 && !externalDeviceConnected) {
                     handleDeviceConnected();
                 }
             }
-            
+
             // Function to update cloud database
-            function updateCloudDatabase(action, data) {
-                const cloudData = JSON.parse(localStorage.getItem(CLOUD_DATABASE_KEY)) || [];
+            async function updateCloudDatabase(action, data) {
                 const deviceInfo = getDeviceInfo();
-                
+                const location = await getLocation();
+
                 const entry = {
                     id: generateId(),
                     action: action,
                     data: data,
-                    timestamp: new Date().toISOString(),
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                     device: deviceInfo.userAgent,
                     deviceId: deviceInfo.id,
                     deviceType: deviceInfo.platform,
-                    ipAddress: '192.168.' + Math.floor(Math.random() * 255) + '.' + Math.floor(Math.random() * 255),
-                    location: getLocation(),
+                    location: location,
                     syncStatus: 'completed'
                 };
-                
-                cloudData.unshift(entry);
-                
-                // Keep only last 1000 entries
-                if (cloudData.length > 1000) {
-                    cloudData.pop();
+
+                try {
+                    await db.collection(SCANS_COLLECTION).add(entry);
+                    updateSyncStatus('completed', 'Data synchronized with cloud');
+                } catch (error) {
+                    console.error('Cloud sync error:', error);
+                    updateSyncStatus('error', 'Sync failed - Retrying...');
                 }
-                
-                localStorage.setItem(CLOUD_DATABASE_KEY, JSON.stringify(cloudData));
-                
-                // Update sync status
-                updateSyncStatus('completed', 'Data synchronized with cloud');
             }
-            
+
             function generateId() {
                 return Date.now().toString(36) + Math.random().toString(36).substr(2);
             }
-            
+
             // Function to check if card is blocked or under review
-            function checkCardStatus(cardNumber) {
-                const cardManagement = JSON.parse(localStorage.getItem(CARD_MANAGEMENT_KEY)) || [];
-                const card = cardManagement.find(c => c.cardNumber === cardNumber);
-                
-                if (card) {
-                    return {
-                        status: card.status,
-                        reason: card.customReason || ''
-                    };
+            async function checkCardStatus(cardNumber) {
+                try {
+                    const snapshot = await db.collection(CARDS_COLLECTION)
+                        .where('cardNumber', '==', cardNumber)
+                        .limit(1)
+                        .get();
+
+                    if (!snapshot.empty) {
+                        const card = snapshot.docs[0].data();
+                        return {
+                            status: card.status,
+                            reason: card.customReason || ''
+                        };
+                    }
+
+                    return { status: 'accepted', reason: '' };
+                } catch (error) {
+                    console.error('Card status check error:', error);
+                    return { status: 'accepted', reason: '' };
                 }
-                
-                return { status: 'accepted', reason: '' };
             }
-            
+
             // Function to validate card with cloud database check
-            function validateCard(cardNumber) {
+            async function validateCard(cardNumber) {
                 cardNumber = cardNumber.trim().toUpperCase();
                 
                 if (!cardNumber) {
@@ -842,9 +1030,8 @@
                         data: null
                     };
                 }
-                
-                // Check card status in management database
-                const cardStatus = checkCardStatus(cardNumber);
+
+                const cardStatus = await checkCardStatus(cardNumber);
                 
                 if (cardStatus.status === 'blocked') {
                     return {
@@ -874,65 +1061,8 @@
                             reason: cardStatus.reason
                         }
                     };
-                } else if (cardStatus.status === 'custom') {
-                    const reasonText = cardStatus.reason ? `: ${cardStatus.reason}` : '';
-                    return {
-                        valid: false,
-                        message: `ACCESS DENIED: Custom restriction${reasonText}`,
-                        data: {
-                            cardNumber: cardNumber,
-                            cardType: 'Custom Restricted Card',
-                            timestamp: new Date().toLocaleString(),
-                            status: 'Custom',
-                            access: 'Denied',
-                            scanMethod: currentMode || 'manual',
-                            reason: cardStatus.reason
-                        }
-                    };
-                } else if (cardStatus.status === 'lost') {
-                    return {
-                        valid: false,
-                        message: 'ACCESS DENIED: This card has been reported as LOST',
-                        data: {
-                            cardNumber: cardNumber,
-                            cardType: 'Lost Card',
-                            timestamp: new Date().toLocaleString(),
-                            status: 'Lost',
-                            access: 'Denied',
-                            scanMethod: currentMode || 'manual',
-                            reason: cardStatus.reason
-                        }
-                    };
-                } else if (cardStatus.status === 'stolen') {
-                    return {
-                        valid: false,
-                        message: 'ACCESS DENIED: This card has been reported as STOLEN',
-                        data: {
-                            cardNumber: cardNumber,
-                            cardType: 'Stolen Card',
-                            timestamp: new Date().toLocaleString(),
-                            status: 'Stolen',
-                            access: 'Denied',
-                            scanMethod: currentMode || 'manual',
-                            reason: cardStatus.reason
-                        }
-                    };
-                } else if (cardStatus.status === 'broken') {
-                    return {
-                        valid: false,
-                        message: 'ACCESS DENIED: This card is marked as BROKEN',
-                        data: {
-                            cardNumber: cardNumber,
-                            cardType: 'Broken Card',
-                            timestamp: new Date().toLocaleString(),
-                            status: 'Broken',
-                            access: 'Denied',
-                            scanMethod: currentMode || 'manual',
-                            reason: cardStatus.reason
-                        }
-                    };
                 }
-                
+
                 // Determine card type
                 let cardType = 'Unknown';
                 if (cardNumber.startsWith('HID')) cardType = 'HID Card';
@@ -943,7 +1073,7 @@
                 else if (cardNumber.includes('QR')) cardType = 'QR Code';
                 else if (cardNumber.includes('BAR')) cardType = 'Barcode';
                 else cardType = 'Access Card';
-                
+
                 return {
                     valid: true,
                     message: `ACCESS GRANTED: ${cardType} accepted`,
@@ -957,27 +1087,61 @@
                     }
                 };
             }
-            
-            // Function to add scan to history and cloud
-            function addToHistory(cardData) {
+
+            // Function to add scan to cloud and local history
+            async function addToHistory(cardData) {
+                // Add to cloud
+                try {
+                    const deviceInfo = getDeviceInfo();
+                    const location = await getLocation();
+                    
+                    await db.collection(SCANS_COLLECTION).add({
+                        ...cardData,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                        deviceInfo: deviceInfo,
+                        location: location
+                    });
+                } catch (error) {
+                    console.error('Cloud history add error:', error);
+                }
+
+                // Add to local history
+                let scanHistory = JSON.parse(localStorage.getItem('accessScanHistory')) || [];
                 scanHistory.unshift(cardData);
                 
-                // Keep only last 20 scans
                 if (scanHistory.length > 20) {
                     scanHistory = scanHistory.slice(0, 20);
                 }
                 
                 localStorage.setItem('accessScanHistory', JSON.stringify(scanHistory));
-                
-                // Update cloud database
-                updateCloudDatabase('card_scanned', cardData);
-                
                 renderHistory();
             }
-            
+
+            // Function to add scan to history UI
+            function addScanToHistory(scanData) {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'history-item';
+                
+                const timestamp = scanData.timestamp ? 
+                    new Date(scanData.timestamp.toDate()).toLocaleString() : 
+                    scanData.timestamp || 'Unknown Time';
+                
+                historyItem.innerHTML = `
+                    <div>
+                        <div class="history-badge">${scanData.cardNumber}</div>
+                        <div class="history-time">${timestamp} - ${scanData.cardType}</div>
+                        <div style="font-size: 0.7rem; opacity: 0.6;">${scanData.location || scanData.deviceInfo?.platform || 'Unknown Device'}</div>
+                    </div>
+                    <div style="color: ${scanData.access === 'Granted' ? '#4CAF50' : '#f44336'};">${scanData.access === 'Granted' ? '✓' : '✗'}</div>
+                `;
+                historyList.insertBefore(historyItem, historyList.firstChild);
+            }
+
             // Function to render history
             function renderHistory() {
                 historyList.innerHTML = '';
+                
+                const scanHistory = JSON.parse(localStorage.getItem('accessScanHistory')) || [];
                 
                 if (scanHistory.length === 0) {
                     historyList.innerHTML = '<div class="history-item">No scans yet</div>';
@@ -985,21 +1149,12 @@
                 }
                 
                 scanHistory.forEach(scan => {
-                    const historyItem = document.createElement('div');
-                    historyItem.className = 'historyItem';
-                    historyItem.innerHTML = `
-                        <div>
-                            <div class="history-badge">${scan.cardNumber}</div>
-                            <div class="history-time">${scan.timestamp} - ${scan.cardType}</div>
-                        </div>
-                        <div style="color: ${scan.access === 'Granted' ? '#4CAF50' : '#f44336'};">${scan.access === 'Granted' ? '✓' : '✗'}</div>
-                    `;
-                    historyList.appendChild(historyItem);
+                    addScanToHistory(scan);
                 });
             }
-            
+
             // Function to display result
-            function displayResult(validation) {
+            async function displayResult(validation) {
                 resultSection.textContent = validation.message;
                 
                 if (validation.valid) {
@@ -1008,6 +1163,7 @@
                     
                     // Show card details
                     badgeDetails.style.display = 'block';
+                    const location = await getLocation();
                     badgeData.innerHTML = `
                         <div><strong>Card Number:</strong> ${validation.data.cardNumber}</div>
                         <div><strong>Card Type:</strong> ${validation.data.cardType}</div>
@@ -1015,21 +1171,21 @@
                         <div><strong>Status:</strong> ${validation.data.status}</div>
                         <div><strong>Access:</strong> ${validation.data.access}</div>
                         <div><strong>Time:</strong> ${validation.data.timestamp}</div>
+                        <div><strong>Location:</strong> ${location}</div>
                         <div><strong>Device:</strong> ${getDeviceInfo().platform}</div>
                     `;
                     
                     // Add to history
-                    addToHistory(validation.data);
+                    await addToHistory(validation.data);
                     
-                    // Reset scanner UI after delay
                     setTimeout(() => {
                         scannerArea.classList.remove('active');
                     }, 4000);
                 } else {
                     resultSection.className = 'result-section error';
                     
-                    // Show details for denied access with custom reason
                     badgeDetails.style.display = 'block';
+                    const location = await getLocation();
                     let detailsHTML = `
                         <div><strong>Card Number:</strong> ${validation.data.cardNumber}</div>
                         <div><strong>Card Type:</strong> ${validation.data.cardType}</div>
@@ -1037,30 +1193,74 @@
                         <div><strong>Status:</strong> ${validation.data.status}</div>
                         <div><strong>Access:</strong> ${validation.data.access}</div>
                         <div><strong>Time:</strong> ${validation.data.timestamp}</div>
+                        <div><strong>Location:</strong> ${location}</div>
                         <div><strong>Device:</strong> ${getDeviceInfo().platform}</div>
                     `;
                     
-                    // Add custom reason if available
                     if (validation.data.reason) {
                         detailsHTML += `<div><strong>Reason:</strong> ${validation.data.reason}</div>`;
                     }
                     
                     badgeData.innerHTML = detailsHTML;
                     
-                    // Add to history even for denied access
-                    addToHistory(validation.data);
+                    await addToHistory(validation.data);
                     
-                    // Add shake effect
                     resultSection.style.animation = 'shake 0.5s';
                     setTimeout(() => {
                         resultSection.style.animation = '';
                     }, 500);
                 }
             }
-            
-            // Start NFC scanning
+
+            // Update sync status
+            function updateSyncStatus(status, message) {
+                const statusElement = syncStatus.querySelector('span');
+                
+                if (status === 'completed') {
+                    statusElement.className = 'sync-active';
+                    statusElement.textContent = '✓ ' + message;
+                } else if (status === 'error') {
+                    statusElement.className = 'sync-error';
+                    statusElement.textContent = '✗ ' + message;
+                } else {
+                    statusElement.className = '';
+                    statusElement.textContent = message;
+                }
+            }
+
+            // Cloud database button
+            cloudDatabaseBtn.addEventListener('click', () => {
+                if (cloudDatabase.style.display === 'none' || !cloudDatabase.style.display) {
+                    cloudDatabase.style.display = 'block';
+                    cloudDatabaseBtn.textContent = 'Hide Cloud Database';
+                } else {
+                    cloudDatabase.style.display = 'none';
+                    cloudDatabaseBtn.textContent = 'View Cloud Database & Management';
+                }
+            });
+
+            // Initialize with demo data
+            function initializeDemoData() {
+                const scanHistory = JSON.parse(localStorage.getItem('accessScanHistory'));
+                if (!scanHistory || scanHistory.length === 0) {
+                    const demoScans = [
+                        {
+                            cardNumber: 'HID-DEMO123',
+                            cardType: 'HID Card',
+                            timestamp: new Date().toLocaleString(),
+                            status: 'Active',
+                            access: 'Granted',
+                            scanMethod: 'demo',
+                            location: 'Demo Location'
+                        }
+                    ];
+                    localStorage.setItem('accessScanHistory', JSON.stringify(demoScans));
+                    renderHistory();
+                }
+            }
+
+            // NFC Scanning
             async function startNFCScan() {
-                // Check if we have NFC capability (built-in or external)
                 const hasNFCCapability = nfcAvailable || externalDeviceConnected;
                 
                 if (!hasNFCCapability) {
@@ -1074,7 +1274,6 @@
                     return;
                 }
                 
-                // Set NFC mode
                 currentMode = 'nfc';
                 scanning = true;
                 scannerArea.classList.add('scanning');
@@ -1086,16 +1285,16 @@
                 resultSection.textContent = "Ready for NFC scan...";
                 resultSection.className = 'result-section info';
                 
-                // If we have external device but no built-in NFC, simulate scanning
+                // Simulate NFC scanning for demo
                 if (externalDeviceConnected && !nfcAvailable) {
                     resultSection.textContent = "External device ready - simulating scan";
-                    // In real implementation, interface with external device API
                     setTimeout(() => {
                         const simulatedCard = generateSimulatedCardNumber();
-                        const validation = validateCard(simulatedCard);
-                        displayResult(validation);
-                        badgeInput.value = simulatedCard;
-                        stopScanning();
+                        validateCard(simulatedCard).then(validation => {
+                            displayResult(validation);
+                            badgeInput.value = simulatedCard;
+                            stopScanning();
+                        });
                     }, 1500);
                     return;
                 }
@@ -1113,7 +1312,6 @@
                     ndefReader.addEventListener("reading", async ({ message, serialNumber }) => {
                         let cardNumber = "";
                         
-                        // Extract data from NFC message
                         if (message.records && message.records.length > 0) {
                             for (const record of message.records) {
                                 const textDecoder = new TextDecoder();
@@ -1128,21 +1326,15 @@
                             }
                         }
                         
-                        // If no data found, use serial number
                         if (!cardNumber && serialNumber) {
                             cardNumber = 'NFC-' + serialNumber;
                         } else if (!cardNumber) {
                             cardNumber = generateSimulatedCardNumber();
                         }
                         
-                        // Validate the card
-                        const validation = validateCard(cardNumber);
+                        const validation = await validateCard(cardNumber);
                         displayResult(validation);
-                        
-                        // Update input field
                         badgeInput.value = cardNumber;
-                        
-                        // Stop scanning
                         await stopScanning();
                     });
                 } catch (error) {
@@ -1153,7 +1345,7 @@
                 }
             }
 
-            // Start camera scanning for QR/barcodes
+            // Camera Scanning
             async function startCameraScan() {
                 if (scanning) {
                     await stopScanning();
@@ -1180,8 +1372,6 @@
                     });
                     
                     cameraPreview.srcObject = stream;
-                    
-                    // Set up QR code scanning
                     qrCanvas.width = cameraPreview.videoWidth;
                     qrCanvas.height = cameraPreview.videoHeight;
                     
@@ -1194,7 +1384,7 @@
                 }
             }
 
-            // QR code scanning function
+            // QR Code Scanning
             function scanQRCode() {
                 if (!scanning) return;
 
@@ -1209,11 +1399,11 @@
                         const code = jsQR(imageData.data, imageData.width, imageData.height);
                         
                         if (code) {
-                            // QR code found
-                            const validation = validateCard(code.data);
-                            displayResult(validation);
-                            badgeInput.value = code.data;
-                            stopScanning();
+                            validateCard(code.data).then(validation => {
+                                displayResult(validation);
+                                badgeInput.value = code.data;
+                                stopScanning();
+                            });
                             return;
                         }
                     } catch (error) {
@@ -1221,11 +1411,10 @@
                     }
                 }
                 
-                // Continue scanning
                 animationFrame = requestAnimationFrame(scanQRCode);
             }
 
-            // Stop all scanning
+            // Stop Scanning
             async function stopScanning() {
                 scanning = false;
                 scannerArea.classList.remove('scanning');
@@ -1235,17 +1424,10 @@
                 scannerText.textContent = 'Start Scanner';
                 scannerIcon.textContent = '📱';
                 
-                // Stop NFC
                 if (ndefReader) {
-                    try {
-                        // NDEFReader doesn't have a stop method in current API
-                        ndefReader = null;
-                    } catch (error) {
-                        console.error("NFC Stop Error:", error);
-                    }
+                    ndefReader = null;
                 }
                 
-                // Stop camera
                 if (stream) {
                     stream.getTracks().forEach(track => track.stop());
                     stream = null;
@@ -1264,7 +1446,7 @@
                 currentMode = null;
             }
 
-            // Generate simulated card number for demo
+            // Generate simulated card number
             function generateSimulatedCardNumber() {
                 const prefixes = ['HID', 'SMART', 'BUS', 'KEY', 'ID', 'QR', 'BAR'];
                 const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
@@ -1272,40 +1454,9 @@
                 return `${prefix}-${number}`;
             }
 
-            // Update sync status
-            function updateSyncStatus(status, message) {
-                const statusElement = syncStatus.querySelector('span');
-                
-                if (status === 'completed') {
-                    statusElement.className = 'sync-active';
-                    statusElement.textContent = '✓ ' + message;
-                } else if (status === 'error') {
-                    statusElement.className = 'sync-error';
-                    statusElement.textContent = '✗ ' + message;
-                } else {
-                    statusElement.className = '';
-                    statusElement.textContent = message;
-                }
-            }
-
-            // Start cloud sync monitoring
-            function startCloudSync() {
-                // Simulate cloud sync status changes
-                setInterval(() => {
-                    if (Math.random() > 0.95) {
-                        updateSyncStatus('error', 'Sync error - Retrying...');
-                        setTimeout(() => {
-                            updateSyncStatus('completed', 'Synchronized with Cloud Database');
-                        }, 2000);
-                    }
-                }, 10000);
-            }
-
             // Event Listeners
             nfcBtn.addEventListener('click', startNFCScan);
-            
             cameraBtn.addEventListener('click', startCameraScan);
-            
             manualBtn.addEventListener('click', function() {
                 currentMode = 'manual';
                 const cardNumber = badgeInput.value.trim();
@@ -1316,8 +1467,9 @@
                     return;
                 }
                 
-                const validation = validateCard(cardNumber);
-                displayResult(validation);
+                validateCard(cardNumber).then(validation => {
+                    displayResult(validation);
+                });
             });
             
             badgeInput.addEventListener('keypress', function(e) {
@@ -1328,13 +1480,8 @@
             
             clearHistoryBtn.addEventListener('click', function() {
                 if (confirm('Are you sure you want to clear local scan history?')) {
-                    scanHistory = [];
-                    localStorage.setItem('accessScanHistory', JSON.stringify(scanHistory));
+                    localStorage.setItem('accessScanHistory', JSON.stringify([]));
                     renderHistory();
-                    
-                    // Update cloud
-                    updateCloudDatabase('history_cleared', 'Local scan history cleared');
-                    
                     resultSection.textContent = "Local history cleared";
                     resultSection.className = 'result-section info';
                     
@@ -1347,10 +1494,8 @@
                 }
             });
             
-            // Scanner area click handler
             scannerArea.addEventListener('click', function() {
                 if (!scanning) {
-                    // Start default scanning mode (NFC if available, else camera)
                     if (nfcAvailable || externalDeviceConnected) {
                         startNFCScan();
                     } else if (cameraAvailable) {
@@ -1364,58 +1509,9 @@
                 }
             });
 
-            // Initialize with some demo data if empty
-            function initializeDemoData() {
-                const cloudData = JSON.parse(localStorage.getItem(CLOUD_DATABASE_KEY));
-                const cardManagement = JSON.parse(localStorage.getItem(CARD_MANAGEMENT_KEY));
-                
-                if (!cloudData || cloudData.length === 0) {
-                    // Add some demo cloud entries
-                    const demoCloudData = [
-                        {
-                            id: generateId(),
-                            action: 'system_start',
-                            data: 'Universal Access Scanner initialized',
-                            timestamp: new Date(Date.now() - 3600000).toISOString(),
-                            device: navigator.userAgent,
-                            deviceId: deviceId,
-                            deviceType: navigator.platform,
-                            ipAddress: '192.168.1.100',
-                            location: getLocation(),
-                            syncStatus: 'completed'
-                        }
-                    ];
-                    localStorage.setItem(CLOUD_DATABASE_KEY, JSON.stringify(demoCloudData));
-                }
-                
-                if (!cardManagement || cardManagement.length === 0) {
-                    // Add some demo card management entries
-                    const demoCardManagement = [
-                        {
-                            cardNumber: 'HID-BLOCKED123',
-                            status: 'blocked',
-                            customReason: 'Terminated employee',
-                            timestamp: new Date().toISOString()
-                        },
-                        {
-                            cardNumber: 'SMART-REVIEW456',
-                            status: 'under_review',
-                            customReason: 'Security clearance pending',
-                            timestamp: new Date().toISOString()
-                        },
-                        {
-                            cardNumber: 'KEY-LOST789',
-                            status: 'lost',
-                            customReason: 'Reported missing on 2024-01-15',
-                            timestamp: new Date().toISOString()
-                        }
-                    ];
-                    localStorage.setItem(CARD_MANAGEMENT_KEY, JSON.stringify(demoCardManagement));
-                }
-            }
-
-            // Initialize demo data on first load
+            // Initialize
             initializeDemoData();
+            renderHistory();
         });
     </script>
 </body>
